@@ -1,0 +1,958 @@
+data = read.csv("Indata.csv", sep = ",", header = T, na.strings = " ")
+str(data)
+
+#install.packages("rockchalk")
+#install.packages("mice")
+#install.packages("missForest")
+#install.packages("missRanger")
+#install.packages("DataExplorer")
+#install.packages("ggRandomForests")
+#install.packages("rpart.plot")
+#install.packages("rattle")
+
+library(scales)
+library(stringr)
+library(lubridate)
+library(rockchalk)
+library(plyr)
+library(caret)
+library(rpart)
+library(DMwR)
+library(corrplot)
+library(DataExplorer)
+library(dplyr)
+library(missForest)
+library(gains)
+library(mice)
+library(missRanger)
+library(ggRandomForests)
+library(rpart.plot)
+library(rattle)
+library(devtools)
+#install_github("vqv/ggbiplot")
+library(ggbiplot)
+library(factoextra)
+
+sum(is.na(data))
+str(data)
+summary(data)
+
+data$Date.Of.Birth = as.character(data$Date.Of.Birth)
+data$D.O.B = str_sub(data$Date.Of.Birth, 1,-6)
+data$Birth.Time = str_sub(data$Date.Of.Birth, start = -5)
+
+data$D.O.B = as_date(data$D.O.B)
+
+data$Y.O.B = year(data$D.O.B)
+x = format(Sys.Date(), "%Y")
+
+data$Age = as.numeric(x) - data$Y.O.B
+rm(x)
+
+levels(data$Board.in.Twelth)[levels(data$Board.in.Twelth)=="0"] = NA
+levels(data$School.Board.in.Tenth)[levels(data$School.Board.in.Tenth)=="0"] = NA
+data$Score.in.Domain[data$Score.in.Domain == -1] = NA
+
+sum(is.na(data)) #11072
+nrow(data[!complete.cases(data),]) #6344
+
+data$CityTier = as.factor(data$CityTier)
+data$CollegeTier = as.factor(data$CollegeTier)
+
+data$Gap_in_education = data$Year.of.Graduation.Completion - data$Year.Of.Twelth.Completion
+x = c(5,6)
+data$Gap_Scenario = ifelse(data$Graduation == "B.Tech/B.E." & data$Gap_in_education == 4, "ideal",
+                           ifelse(data$Graduation == "M.Tech./M.E." & data$Gap_in_education == 6,"ideal",
+                                  ifelse(data$Graduation == "MCA" & data$Gap_in_education %in% x,"ideal","non-ideal")))
+
+data$Gap_Scenario = as.factor(data$Gap_Scenario)
+
+data$Y.O.B = NULL
+data$D.O.B = NULL
+data$Birth.Time = NULL
+data$Date.Of.Birth = NULL
+data$Candidate.ID = NULL
+data$CityCode = NULL
+data$CollegeCode = NULL
+data$Year.Of.Twelth.Completion = NULL
+
+data$CP.opt = as.factor(ifelse(data$Score.in.ComputerProgramming == -100, '0','1'))
+data$ESem.opt = as.factor(ifelse(data$Score.in.ElectronicsAndSemicon == -100, '0','1'))
+data$CS.opt = as.factor(ifelse(data$Score.in.ComputerScience == -100, '0','1'))
+data$Mech.opt = as.factor(ifelse(data$Score.in.MechanicalEngg == -100, '0','1'))
+data$ElEng.opt = as.factor(ifelse(data$Score.in.ElectricalEngg == -100, '0','1'))
+data$Tel.opt = as.factor(ifelse(data$Score.in.TelecomEngg == -100, '0','1'))
+data$Civ.opt = as.factor(ifelse(data$Score.in.CivilEngg == -100, '0','1'))
+
+data$Score.in.ComputerProgramming[data$Score.in.ComputerProgramming == -100] = 0
+data$Score.in.ElectronicsAndSemicon[data$Score.in.ElectronicsAndSemicon == -100] = 0
+data$Score.in.ComputerScience[data$Score.in.ComputerScience == -100] = 0
+data$Score.in.MechanicalEngg[data$Score.in.MechanicalEngg == -100] = 0
+data$Score.in.ElectricalEngg[data$Score.in.ElectricalEngg == -100] = 0
+data$Score.in.TelecomEngg[data$Score.in.TelecomEngg == -100] = 0
+data$Score.in.CivilEngg[data$Score.in.CivilEngg == -100] = 0
+
+data = data[,c(1:17,24,39,23,38,22,37,21,36,20,35,19,34,18,33,25:32)]
+
+
+data$School.Board.in.Tenth = combineLevels(data$School.Board.in.Tenth,
+                                           levs = c("board of secondary education - andhra pradesh",
+                                                    "board ofsecondary education ap","board of ssc education andhra pradesh",
+                                                    "apsche","apssc","ap state board for secondary education",
+                                                    "board of intermediate education","school secondary education andhra pradesh",
+                                                    "state board of secondary education ap","andhra pradesh board ssc",
+                                                    "andhra pradesh state board","state board of secondary education andhra pradesh",
+                                                    "board of secondary education ap","ssc board of andrapradesh",
+                                                    "ssc-andhra pradesh","ap state board",
+                                                    "board of secondary education andhra pradesh"),
+                                           newLabel = "Andhra Pradesh")
+
+data$School.Board.in.Tenth = combineLevels(data$School.Board.in.Tenth,
+                                           levs = c("pseb","punjab school education board mohali"),
+                                           newLabel = "Punjab")
+
+data$School.Board.in.Tenth = combineLevels(data$School.Board.in.Tenth,
+                                           levs = c("gujarat state board","gujarat board","gseb","gsheb"),
+                                           newLabel = "Gujarat")
+
+data$School.Board.in.Tenth = combineLevels(data$School.Board.in.Tenth,
+                                           levs = c("cgbse raipur","cgbse"),
+                                           newLabel = "Chhattisgarh")
+
+data$School.Board.in.Tenth = combineLevels(data$School.Board.in.Tenth,
+                                           levs = c("board of secendary education orissa","board of secondary education (bse) orissa",
+                                                    "board of secondary education odisha","board of secondary education(bse) orissa",
+                                                    "bsc orissa","board of secondary education orissa","bse odisha",
+                                                    "hse  orissa","bse orissa","bse"),
+                                           newLabel = "Orissa")
+
+data$School.Board.in.Tenth = combineLevels(data$School.Board.in.Tenth,
+                                           levs = c("himachal pradesh board","himachal pradesh board of school education",
+                                                    "state borad hp"),
+                                           newLabel = "Himachal Pradesh")
+
+data$School.Board.in.Tenth = combineLevels(data$School.Board.in.Tenth,
+                                           levs = c("board of school education harayana","board of school education haryana",
+                                                    "hbse","haryana board of school education","hbsc",
+                                                    "haryana board of school education (hbse)"),
+                                           newLabel = "Haryana")
+
+data$School.Board.in.Tenth = combineLevels(data$School.Board.in.Tenth,
+                                           levs = c("delhi board","delhi public school"),
+                                           newLabel = "Delhi")
+
+data$School.Board.in.Tenth = combineLevels(data$School.Board.in.Tenth,
+                                           levs = c("ua","uttranchal board","uttaranchal shiksha avam pariksha parishad",
+                                                    "uttrakhand board","uttaranchal state board","uttarakhand board",
+                                                    "board of school education uttarakhand"),
+                                           newLabel = "Uttarakhand")
+
+data$School.Board.in.Tenth = combineLevels(data$School.Board.in.Tenth,
+                                           levs = c("state(karnataka board)","karnataka state education examination board",
+                                                    "karnataka secondary school of examination","karnataka board of higher education",
+                                                    "karnataka secondary education","karnataka board of secondary education",
+                                                    "kea","karnataka secondary board","ksseb(karnataka state board)",
+                                                    "karantaka secondary education and examination borad","ksseb","karnataka sslc board bangalore",
+                                                    "karnataka education board (keeb)","state board of karnataka","ksbe","karnataka state examination board",
+                                                    "karnataka","karnataka secondory education board","sslc board","karnataka education board",
+                                                    "kseeb(karnataka secondary education examination board)","karnataka state secondary education board",
+                                                    "kseeb","karnataka secondary education examination board","sslc karnataka",
+                                                    "karnataka state board","karnataka secondary eduction","karnataka secondary education board",
+                                                    "sslc","karnataka board"),
+                                           newLabel = "Karnataka")
+
+data$School.Board.in.Tenth = combineLevels(data$School.Board.in.Tenth,
+                                           levs = c("kerala state board","education board of kerala","kerala state technical education",
+                                                    "kerala university","kerala","kseb"),
+                                           newLabel = "Kerala")
+
+data$School.Board.in.Tenth = combineLevels(data$School.Board.in.Tenth,
+                                           levs = c("tn state board","tamilnadu matriculation board",
+                                                    "sri kannika parameswari highier secondary school udumalpet",
+                                                    "stjoseph of cluny matrhrsecschool neyveli cuddalore district",
+                                                    "tamil nadu state","kalaimagal matriculation higher secondary school",
+                                                    "tamilnadu state board","stjosephs girls higher sec school dindigul"),
+                                           newLabel = "Tamil Nadu")
+
+data$School.Board.in.Tenth = combineLevels(data$School.Board.in.Tenth,
+                                           levs = c("seba(assam)","seba"),
+                                           newLabel = "Assam")
+
+data$School.Board.in.Tenth = combineLevels(data$School.Board.in.Tenth,
+                                           levs = c("state bord","board of secondaray education","sarada high scchool",
+                                                    "secondary school certificate","ghseb","bharathi matriculation school",
+                                                    "bsemp","national public school","secondary school cerfificate",
+                                                    "maticulation","board of secondary school education","anglo indian",
+                                                    "gyan bharati school","don bosco maatriculation school","mhsbse",
+                                                    "stmary's convent inter college","board secondary  education",
+                                                    "holy cross matriculation hr sec school","mirza ahmed ali baig",
+                                                    "hse board","state board","hsc","matric board",
+                                                    "bse(board of secondary education)","little jacky matric higher secondary school",
+                                                    "certificate of middle years program of ib","matric","board of ssc",
+                                                    "secondary school education","board of  secondary education","cluny",
+                                                    "jawahar navodaya vidyalaya","ms board","metric","matriculation board",
+                                                    "secondary state certificate","state board of secondary education( ssc)",
+                                                    "board of secondary education","secondary school of education",
+                                                    "stmary higher secondary","ssc regular","hsce","matriculation","hse",
+                                                    "kiran english medium high school","state","stateboard","ssc","state board","state board "),
+                                           newLabel = "other")
+
+data$School.Board.in.Tenth = combineLevels(data$School.Board.in.Tenth,
+                                           levs = c("jbse jharkhand","jharkhand secondary board",
+                                                    "jharkhand secondary examination board (ranchi)",
+                                                    "jharkhand accademic council",
+                                                    "jharkhand secondary examination board ranchi",
+                                                    "state board (jac ranchi)","jharkhand secondary education board",
+                                                    "jharkhand academic council","jharkhand acedemic council","jseb"),
+                                           newLabel = "Jharkhand")
+
+
+data$School.Board.in.Tenth = combineLevels(data$School.Board.in.Tenth,
+                                           levs = c("icse board new delhi","icse board","council for indian school certificate examination",
+                                                    "cicse","icse"),
+                                           newLabel = "ICSE")
+
+
+data$School.Board.in.Tenth = combineLevels(data$School.Board.in.Tenth,
+                                           levs = c("bihar school examination board patna","bihar","biharboard",
+                                                    "bihar board","bihar school examination board",
+                                                    "bihar secondary education board patna","bihar examination board patna",
+                                                    "bsepatna","bseb patna","bseb"),
+                                           newLabel = "Bihar")
+data$School.Board.in.Tenth = combineLevels(data$School.Board.in.Tenth,
+                                           levs = c("mp-bse","mp state board","madhya pradesh board","state boardmp board ","mp","mp board bhopal",
+                                                    "mpbse","mpboard","mp board"),
+                                           newLabel = "Madhya Pradesh")
+
+data$School.Board.in.Tenth = combineLevels(data$School.Board.in.Tenth,
+                                           levs = c("up bourd","u p","up borad","bright way college (up board)","upbhsie","up baord",
+                                                    "up board allahabad","uttar pradesh board","up","up(allahabad)","u p board",
+                                                    "up bord","upboard","board of high school and intermediate education uttarpradesh",
+                                                    "uttar pradesh","up-board","up board"),
+                                           newLabel = "Uttar Pradesh")
+data$School.Board.in.Tenth = combineLevels(data$School.Board.in.Tenth,
+                                           levs = c("dav public school sec 14","cbse board","cbsc","aisse",
+                                                    "central board of secondary education new delhi","cbse[gulf zone]",
+                                                    "central board of secondary education","dav public school hehal",
+                                                    "cbse","cbse "),
+                                           newLabel = "cbse")
+
+data$School.Board.in.Tenth = combineLevels(data$School.Board.in.Tenth,
+                                           levs = c("j&k state board of school education","j & k bord","jkbose"),
+                                           newLabel = "Jammu and Kashmir")
+
+data$School.Board.in.Tenth = combineLevels(data$School.Board.in.Tenth,
+                                           levs = c("maharashtra state board of secondary and higher secondary education",
+                                                    "ssc maharashtra board","maharastra board","pune board","msbshse pune",
+                                                    "kolhapur divisional board maharashtra","nagpur board","mumbai board",
+                                                    "maharashtra sate board","maharashtra board pune",
+                                                    "maharashtra state boar of secondary and higher secondary education",
+                                                    "maharashtra nasik board","nagpur","latur board",
+                                                    "maharashtra state(latur board)","latur",
+                                                    "maharashtra state board of secondary & higher secondary education",
+                                                    "aurangabad board","kolhapur",
+                                                    "maharashtra state board of secondary and higher secondary education pune",
+                                                    "maharashtra state board pune","nagpur divisional board","nagpur board nagpur",
+                                                    "maharashtra state board mumbai divisional board","maharashtra satate board",
+                                                    "pune","nasik","nashik board","sss pune","maharashtra",
+                                                    "maharashtra state board for ssc","maharashtra state board",
+                                                    "maharashtra board"),
+                                           newLabel = "Maharashtra")
+
+data$School.Board.in.Tenth = combineLevels(data$School.Board.in.Tenth,
+                                           levs = c("west bengal  board of secondary education",
+                                                    "west bengal board of secondary eucation",
+                                                    "west bengal board of secondary examination (wbbse)",
+                                                    "west bengal board of secondary education",
+                                                    "state board - west bengal board of secondary education : wbbse",
+                                                    "wbbsce","wbbse"),
+                                           newLabel = "West Bengal")
+
+data$School.Board.in.Tenth = combineLevels(data$School.Board.in.Tenth,
+                                           levs = c("rbse (state board)","secondary education board of rajasthan",
+                                                    "rbse ajmer","rajasthan board ajmer","secondary board of rajasthan",
+                                                    "board of secondary education rajasthan(rbse)",
+                                                    "rajasthan board of secondary education","board of secondary education rajasthan",
+                                                    "rajasthan board","rbse"),
+                                           newLabel = "Rajasthan")
+
+data$Board.in.Twelth = combineLevels(data$Board.in.Twelth,
+                                     levs = c("bte delhi","board of technical education","board of technicaleducation delhi"),
+                                     newLabel = "Delhi")
+
+data$Board.in.Twelth = combineLevels(data$Board.in.Twelth,
+                                     levs = c("cgbse raipur","cgbse"),
+                                     newLabel = "Chhattisgarh")
+
+data$Board.in.Twelth = combineLevels(data$Board.in.Twelth,
+                                     levs = c("himachal pradesh board","himachal pradesh board of school education"),
+                                     newLabel = "Himachal Pradesh")
+
+data$Board.in.Twelth = combineLevels(data$Board.in.Twelth,
+                                     levs = c("psbte","punjab state board of technical education & industrial training",
+                                              "pseb","punjab state board of technical education & industrial training chandigarh"),
+                                     newLabel = "Punjab")
+
+data$Board.in.Twelth = combineLevels(data$Board.in.Twelth,
+                                     levs = c("ahsec"),
+                                     newLabel = "Assam")
+
+data$Board.in.Twelth = combineLevels(data$Board.in.Twelth,
+                                     levs = c("ua","uttranchal board","uttaranchal shiksha avam pariksha parishad",
+                                              "uttrakhand board","uttaranchal state board","uttarakhand board",
+                                              "board of school education uttarakhand"),
+                                     newLabel = "Uttarakhand")
+
+data$Board.in.Twelth = combineLevels(data$Board.in.Twelth,
+                                     levs = c("isc board new delhi","aissce","isc board","isce","council for indian school certificate examination",
+                                              "cicse","icse","isc"),
+                                     newLabel = "ICSE")
+
+data$Board.in.Twelth = combineLevels(data$Board.in.Twelth,
+                                     levs = c("mp-bse","bsemp","madhya pradesh board","madhya pradesh open school",
+                                              "mp board bhopal","mp","mpbse","mpboard","mp board"),
+                                     newLabel = "Madhya Pradesh")
+
+data$Board.in.Twelth = combineLevels(data$Board.in.Twelth,
+                                     levs = c("j&k state board of school education","j & k board","jkbose"),
+                                     newLabel = "Jammu and Kashmir")
+
+
+data$Board.in.Twelth = combineLevels(data$Board.in.Twelth,
+                                     levs = c("west bengal board of higher secondary education","west bengal council of higher secondary eucation",
+                                              "west bengal council of higher secondary examination (wbchse)",
+                                              "west bengal council of higher secondary education","wbscte",
+                                              "state board - west bengal council of higher secondary education : wbchse",
+                                              "west bengal state council of technical education","wbchse","wbbhse"),
+                                     newLabel = "West Bengal")
+
+data$Board.in.Twelth = combineLevels(data$Board.in.Twelth,
+                                     levs = c("rbse (state board)","secnior secondary education board of rajasthan",
+                                              "rajasthan board ajmer","secondary board of rajasthan","board of secondary education rajasthan(rbse)",
+                                              "rajasthan board of secondary education","board of secondary education rajasthan",
+                                              "rajasthan board","rbse"),
+                                     newLabel = "Rajasthan")
+
+data$Board.in.Twelth = combineLevels(data$Board.in.Twelth,
+                                     levs = c("state board of technical education and training","chsc","scte vt orissa",
+                                              "certificate for higher secondary education (chse)orissa","scte & vt (diploma)",
+                                              "chse(concil of higher secondary education)","board of higher secondary orissa",
+                                              "chse odisha","scte&vt","scte and vt orissa","chse orissa","chse"),
+                                     newLabel = "Orissa")
+
+data$Board.in.Twelth = combineLevels(data$Board.in.Twelth,
+                                     levs = c("mbose"),
+                                     newLabel = "Meghalaya")
+
+data$Board.in.Twelth = combineLevels(data$Board.in.Twelth,
+                                     levs = c("department of technical education bangalore","karnataka sslc",
+                                              "dpue","sjrcw","pue","preuniversity board(karnataka)",
+                                              "dept of pre-university education","pre university board of karnataka",
+                                              "karnataka pre-university","karnataka board secondary education",
+                                              "karnataka board of university","department of pre-university education(government of karnataka)",
+                                              "pre university board","karnataka secondary education board",
+                                              "pre university board katnataka","dte","karnatak pu board","pu board karnataka",
+                                              "karnataka pre unversity board","karnataka pre university board",
+                                              "department of pre-university education","state board of karnataka",
+                                              "department of pre university education","karnataka state examination board",
+                                              "karanataka secondary board","karnataka state","karnataka pu board",
+                                              "karnataka secondary education","jyoti nivas","karnataka pu",
+                                              "department of pre-university eduction","karnataka education board",
+                                              "karnataka state pre- university board","karnataka pre-university board",
+                                              "directorate of technical education banglore","karnataka state board",
+                                              "govt of karnataka department of pre-university education",
+                                              "department of pre-university education bangalore","s j polytechnic",
+                                              "pu  board karnataka","pre-university board","pu board  karnataka",
+                                              "p u board karnataka","pu board","pre-university","pub","kea","pu",
+                                              "karnataka board"),
+                                     newLabel = "Karnataka")
+
+
+data$Board.in.Twelth = combineLevels(data$Board.in.Twelth,
+                                     levs = c("board of higher secondary examination kerala","kerala state board",
+                                              "kerala state hse board","kerala university","kerala"),
+                                     newLabel = "Kerala")
+data$Board.in.Twelth = combineLevels(data$Board.in.Twelth,
+                                     levs = c("gseb/technical education board","gshseb","gseb","gujarat board","ghseb",
+                                              "gsheb"),
+                                     newLabel = "Gujarat")
+data$Board.in.Twelth = combineLevels(data$Board.in.Twelth,
+                                     levs = c("amravati divisional board","diploma in engg (e &tc) tilak maharashtra vidayapeeth",
+                                              "diploma ( maharashtra state board of technical education)",
+                                              "hsc maharashtra board","pune board","msbshse pune","kolhapur divisional board maharashtra",
+                                              "nagpur board","government polytechnic mumbai mmbai board",
+                                              "stmiras college for girls","maharashtra state boar of secondary and higher secondary education",
+                                              "maharashtra nasik board","nagpur","latur board","diploma(msbte)",
+                                              "maharashtra board pune","maharashtra state(latur board)",
+                                              "maharashtra state board of secondary & higher secondary education",
+                                              "msbte (diploma in computer technology)","aurangabad board","msbte pune",
+                                              "nagpur divisional board","kolhapur","nagpur board nagpur",
+                                              "maharashtra state board mumbai divisional board","maharashtra satate board",
+                                              "msbte","ms board","nasik","nashik board","hsc pune","maharashtra",
+                                              "latur","maharashtra state board for hsc","maharashtra state board",
+                                              "maharashtra board"),
+                                     newLabel = "Maharashtra")
+data$Board.in.Twelth = combineLevels(data$Board.in.Twelth,
+                                     levs = c("bteup","uo board"," upboard","up bourd","u p","lucknow public college",
+                                              "upboard","bright way college (up board)","upbhsie","up baord",
+                                              "up board allahabad","uttar pradesh board","bte up","up(allahabad)",
+                                              "u p board","up bord","board of high school and intermediate education uttarpradesh",
+                                              "uttar pradesh","up-board","up board","up"),
+                                     newLabel = "Uttar Pradesh")
+data$Board.in.Twelth = combineLevels(data$Board.in.Twelth,
+                                     levs = c("bseb patna","bihar school examination board patna","bihar","bihar board",
+                                              "bihar intermediate education council","bciec patna","intermediate council patna",
+                                              "biec","bihar intermediate education council patna","biec-patna","bice",
+                                              "biec patna","bseb"),
+                                     newLabel = "Bihar")
+data$Board.in.Twelth = combineLevels(data$Board.in.Twelth,
+                                     levs = c("jiec","jstb jharkhand","jharkhand acamedic council (ranchi)",
+                                              "jharkhand accademic council","state board (jac ranchi)","jharkhand board",
+                                              "jharkhand academic council","sbte jharkhand","jharkhand acedemic council"),
+                                     newLabel = "Jharkhand")
+
+data$Board.in.Twelth = combineLevels(data$Board.in.Twelth,
+                                     levs = c("state board of technical education harayana","ssm srsecschool","hse",
+                                              "board of school education harayana","haryana state board of technical education chandigarh",
+                                              "technical board punchkula","state board of technical eduction panchkula",
+                                              "hbsc","hbse"),
+                                     newLabel = "Haryana")
+
+data$Board.in.Twelth = combineLevels(data$Board.in.Twelth,
+                                     levs = c("jaswant modern school","mpc","narayana junior college",
+                                              "aligarh muslim university","state broad","pre university","state bord",
+                                              "department of technical education","intermideate","puboard","intermediate state board",
+                                              "all india board","apsb","higher secondary","state syllabus","board of secondary school of education",
+                                              "ibe","diploma in computers","state board","sda matric higher secondary school",
+                                              "ssc","international baccalaureate (ib) diploma","board of secondary education",
+                                              "higher secondary education","hisher seconadry examination(state board)",
+                                              "science college","sri sankara vidyalaya","intermidiate","nios",
+                                              "matric board","matriculation","state","staae board","hsc",
+                                              "higher secondary state certificate","intermediate board","intermediate",
+                                              "stateboard","puc","intermedite","state board "),
+                                     newLabel = "other")
+
+data$Board.in.Twelth = combineLevels(data$Board.in.Twelth,
+                                     levs = c("board of intrmediate education ap","intermediate board of education",
+                                              "board of intermidiate examination","intermediate board of education andhra pradesh",
+                                              "board fo intermediate education ap","andhra pradesh board of secondary education",
+                                              "board of intermeadiate education","borad of intermediate",
+                                              "board of intmediate education ap","board of intermediate ap",
+                                              "board of intermediate(bie)","baord of intermediate education",
+                                              "intermediate board examination","board of intermidiate","andhra pradesh",
+                                              " board of intermediate","sbtet","ap board for intermediate education",
+                                              "board of intermediate education:ap hyderabad", "intermediate board of andhra pardesh",
+                                              "board of intermidiate education ap","andhpradesh board of intermediate education",
+                                              "state board of technical education","board of intermediate education hyderabad",
+                                              "andhra pradesh state board","boardofintermediate","andhra board",
+                                              "state  board of intermediate education andhra pradesh","bieap","bie",
+                                              "board of intermediate education","ipe","board of intermediate education ap",
+                                              "sri chaitanya junior kalasala","apbsc","board of intermediate","ap board",
+                                              "apbie","ap intermediate board","board of intermediate education andhra pradesh"),
+                                     newLabel = "Andhra Pradesh")
+data$Board.in.Twelth = combineLevels(data$Board.in.Twelth,
+                                     levs = c("cbse board","dav public school sec 14","cbsc","jawahar higher secondary school",
+                                              "cbse new delhi","dav public school","central board of secondary education new delhi",
+                                              "central board of secondary education","dav public school hehal","cbese",
+                                              "cbse"),
+                                     newLabel = "cbse")
+
+
+data$Board.in.Twelth = combineLevels(data$Board.in.Twelth,
+                                     levs = c("state board - tamilnadu","stateboard/tamil nadu","jaycee matriculation school",
+                                              "tn state board","tamilnadu higher secondary education board","electonincs and communication(dote)",
+                                              "hslc (tamil nadu state board)","sri kannika parameswari highier secondary school udumalpet",
+                                              "stjoseph of cluny matrhrsecschool neyveli cuddalore district",
+                                              "st joseph hr sec school","tamil nadu polytechnic","tamil nadu state",
+                                              "ks rangasamy institute of technology","holy cross matriculation hr sec school",
+                                              "tamilnadu state board","tamilnadu stateboard","dote (diploma - computer engg)",
+                                              "tamil nadu state board","srv girls higher sec school rasipuram"),
+                                     newLabel = "Tamil Nadu")
+
+data$Discipline = combineLevels(data$Discipline,
+                                levs = c("electronics", "electronics & instrumentation eng", "electronics & telecommunications", "electronics and communication engineering","electronics and computer engineering","electronics and instrumentation engineering", "electronics engineering", "embedded systems technology", "telecommunication engineering"),
+                                newLabel = "Electronics")
+
+
+data$Discipline = combineLevels(data$Discipline,
+                                levs = c("computer and communication engineering" , "computer application", "computer engineering", "computer networking", "computer science", "computer science & engineering", "computer science and technology"),
+                                newLabel = "Computer.Sci.Engg")
+
+data$Discipline = combineLevels(data$Discipline,
+                                levs = c("information & communication technology", "information science", "information science engineering", "information technology"),
+                                newLabel = "IT")
+
+data$Discipline = combineLevels(data$Discipline,
+                                levs = c("applied electronics and instrumentation", "instrumentation and control engineering", "instrumentation engineering", "control and instrumentation engineering"),
+                                newLabel = "Instrumentation")
+
+data$Discipline = combineLevels(data$Discipline,
+                                levs = c("automobile/automotive engineering", "internal combustion engine", "mechanical & production engineering", "mechanical and automation", "mechanical engineering"),
+                                newLabel = "Mechanical")
+
+data$Discipline = combineLevels(data$Discipline,
+                                levs = c("electrical and power engineering", "electrical engineering", "electronics and electrical engineering", "power systems and automation"),
+                                newLabel = "Electrical")
+
+data$Discipline = combineLevels(data$Discipline,
+                                levs = c("industrial engineering", "industrial & production engineering", "industrial & management engineering"),
+                                newLabel = "Inds.Mgmt")
+
+
+data$Discipline = combineLevels(data$Discipline,
+                                levs = c("ceramic engineering", "metallurgical engineering", "polymer technology"),
+                                newLabel = "MaterialEngg")
+
+data$Discipline = combineLevels(data$Discipline,
+                                levs = c("biomedical engineering", "biotechnology"),
+                                newLabel = "Biosciences")
+
+#Imputations
+names = colnames(data)[colSums(is.na(data)) > 0]
+names
+#"School.Board.in.Tenth" "Board.in.Twelth"  "Age" "Score.in.Domain"
+imputers = data[complete.cases(data),]
+imputers_miss = data[!complete.cases(data),]
+
+xc = chisq.test(imputers$School.Board.in.Tenth, imputers$State, simulate.p.value = T)
+xc
+corrplot(xc$residuals, is.corr = F)
+#data:  imputers$School.Board.in.Tenth and imputers$State
+#Chi-squared = 47953, df = NA, p-value = 0.0004998
+
+xd = chisq.test(imputers$School.Board.in.Tenth, imputers$Board.in.Twelth, simulate.p.value = T)
+xd
+corrplot(xd$residuals, is.corr = F)
+#data:  imputers$School.Board.in.Tenth and imputers$Board.in.Twelth
+#Chi-squared = 185820, df = NA, p-value = 0.0004998
+xe = chisq.test(imputers$Board.in.Twelth, imputers$State, simulate.p.value = T)
+xe
+corrplot(xe$residuals, is.corr =F)
+#data:  imputers$Board.in.Twelth and imputers$State
+#X-squared = 54817, df = NA, p-value = 0.0004998
+
+'%!in%' = function(x,y)!('%in%'(x,y))
+
+for(i in 1:nrow(imputers_miss)){
+  if((imputers_miss$State[i] %in% levels(data$School.Board.in.Tenth)) & 
+     (is.na(imputers_miss[i,"School.Board.in.Tenth"]) == T)){
+    imputers_miss$School.Board.in.Tenth[i] = imputers_miss$State[i]  
+  }
+  if((imputers_miss$State[i] %!in% levels(data$School.Board.in.Tenth)) & 
+     (is.na(imputers_miss[i,"School.Board.in.Tenth"]) == T)){
+    imputers_miss$School.Board.in.Tenth[i] = "other"
+  }
+}
+rm(i)
+sum(is.na(imputers_miss$School.Board.in.Tenth))
+
+imputers_miss$Board.in.Twelth[is.na(imputers_miss$Board.in.Twelth)] = imputers_miss$School.Board.in.Tenth[is.na(imputers_miss$Board.in.Twelth)]
+sum(is.na(imputers_miss$Board.in.Twelth))
+
+newdata = rbind(imputers, imputers_miss)
+
+names = colnames(newdata)[colSums(is.na(newdata)) > 0]
+names
+#"Score.in.Domain" "Age" 
+
+set.seed(001)
+rand_ind = sample(nrow(newdata))
+newdata = newdata[rand_ind,]
+
+nrow(newdata[complete.cases(newdata),])
+imputers = newdata[complete.cases(newdata),]
+imputers_miss = newdata[!(complete.cases(newdata)),]
+
+exp = imputers
+exp_num = exp[,c(37,17)]
+sum(is.na(exp_num))
+exp_miss = prodNA(exp_num, noNA = 0.1) #10% missing values introduced in exp_miss
+
+exp_age = cbind(exp[,-c(1,37,17)],"Age" = exp_miss$Age)
+#created a df with 'Age' containing NA's and all other columns excluding 'Pay' and
+#'Score.in.Domain' named exp_age
+exp_score = cbind(exp[,-c(1,37,17)],"Score.in.Domain" = exp_miss$Score.in.Domain)
+
+age_train = exp_age[complete.cases(exp_age),]
+age_valid = exp_age[!complete.cases(exp_age),]
+
+score_train = exp_score[complete.cases(exp_score),]
+score_valid = exp_score[!complete.cases(exp_score),]
+
+rpart_age = rpart(Age ~ ., data= age_train, method="anova")
+age_rpart = predict(rpart_age, age_valid)
+age_rpart = round(age_rpart)
+age_actu = exp_num[is.na(exp_miss$Age),"Age"]
+regr.eval(age_actu, age_rpart)
+# mae        mse       rmse       mape 
+# 0.59126365 0.76287051 0.87342459 0.02011603 
+
+ggplot(mapping = aes(age_rpart, age_actu))+geom_point()+geom_abline(intercept = 0, slope = 1)+
+  ggtitle("Decision tree - actual vs predicted - Age") + xlab("predicted") + ylab("actual")
+
+knn_age = knnImputation(exp_age)
+age_knn = knn_age[is.na(exp_age$Age), "Age"]
+age_knn = round(age_knn)
+regr.eval(age_actu, age_knn)
+#           mae       mse      rmse      mape 
+#           0.2574103 0.3720749 0.6099794 0.0087469 
+
+ggplot(mapping = aes(age_knn, age_actu))+geom_point()+geom_abline(intercept = 0, slope = 1)+
+  ggtitle("Knn - actual vs predicted - Age") + xlab("predicted") + ylab("actual")
+
+ci_age = centralImputation(exp_age)
+age_ci = ci_age[is.na(exp_age$Age), "Age"]
+age_ci = round(age_ci)
+regr.eval(age_actu, age_ci)
+#      mae        mse       rmse       mape 
+#     1.32917317 2.85881435 1.69080287 0.04467836 
+ggplot(mapping = aes(age_ci, age_actu))+geom_point()+geom_abline(intercept = 0, slope = 1)+
+  xlim(24,34) +
+  ggtitle("Central Imp. - actual vs predicted - Age") + xlab("predicted") + ylab("actual")
+
+rpart_score = rpart(Score.in.Domain ~ ., data= score_train, method="anova")
+score_rpart = predict(rpart_score, score_valid)
+score_actu = exp_num[is.na(exp_miss$Score.in.Domain),"Score.in.Domain"]
+regr.eval(score_actu, score_rpart)
+#       mae        mse       rmse       mape 
+#0.09481679 0.01733919 0.13167835 0.17521269
+
+ggplot(mapping = aes(score_rpart*100, score_actu*100))+geom_point()+
+  geom_abline(intercept = 0, slope = 1)+
+  ggtitle("Dec.Tree - actual vs predicted - Score.in.Domain") +
+  xlab("predicted") + ylab("actual")
+
+knn_score = knnImputation(exp_score)
+score_knn = knn_score[is.na(exp_score$Score.in.Domain), "Score.in.Domain"]
+regr.eval(score_actu, score_knn)
+#       mae         mse        rmse        mape 
+#    0.053318367 0.008108157 0.090045304 0.097981457 
+
+ggplot(mapping = aes(score_knn*100, score_actu*100))+geom_point()+
+  geom_abline(intercept = 0, slope = 1)+
+  ggtitle("KNN - actual vs predicted - Score.in.Domain") +
+  xlab("predicted") + ylab("actual")
+
+ci_score = centralImputation(exp_score)
+score_ci = ci_score[is.na(exp_score$Score.in.Domain),"Score.in.Domain"]
+regr.eval(score_actu, score_ci)
+#       mae        mse       rmse       mape 
+#0.17427507 0.04557488 0.21348273 0.34012735
+
+ggplot(mapping = aes(score_ci*100, score_actu*100))+geom_point()+
+  geom_abline(intercept = 0, slope = 1)+
+  xlim(35,100)+
+  ggtitle("Central Imp - actual vs predicted - Score.in.Domain") +
+  xlab("predicted") + ylab("actual")
+
+sum(is.na(age_valid))
+rf_age = randomForest(age_train[,-37], age_train[,37], ntree = 120)
+age_rf = predict(rf_age, age_valid[,-37])
+age_rf = round(age_rf)
+regr.eval(age_actu, age_rf)
+#        mae         mse        rmse        mape 
+#0.170826833 0.208268331 0.456364252 0.006040812
+
+ggplot(mapping = aes(age_rf, age_actu))+geom_point()+geom_abline(intercept = 0, slope = 1)+ 
+  xlim(24,34) +
+  ggtitle("Random forest - actual vs predicted - Age") + xlab("predicted") + ylab("actual")
+
+
+
+
+rf_score = randomForest(score_train[,-37], score_train[,37], ntree = 120)
+score_rf = predict(rf_score, score_valid[,-37])
+regr.eval(score_actu, score_rf)
+#        mae         mse        rmse        mape 
+#0.034948234 0.004105507 0.064074227 0.067670623
+
+ggplot(mapping = aes(score_rf*100, score_actu*100))+geom_point()+
+  geom_abline(intercept = 0, slope = 1)+ ylab("actual") +
+  ggtitle("Random forest - actual vs predicted - Score.in.Domain") + xlab("predicted") 
+
+age_newdata = predict(rf_age, newdata[is.na(newdata$Age),-c(1,17,37)])
+age_newdata = round(age_newdata)
+newdata$Age[is.na(newdata$Age)] = age_newdata
+
+score_newdata = predict(rf_score, newdata[is.na(newdata$Score.in.Domain), -c(1,17,37)])
+newdata$Score.in.Domain[is.na(newdata$Score.in.Domain)] = score_newdata
+
+rm(age_newdata, score_newdata,exp, exp_age, exp_miss, exp_num, exp_score,score_actu, score_rf,
+   age_actu, age_rf,ci_score, score_ci,knn_score, score_knn,rpart_score, score_rpart,
+   ci_age, age_ci,knn_age, age_knn,rpart_age, age_rpart,rand_ind, imputers, imputers_miss,
+   xc,xd,xe)
+
+sum(is.na(newdata))
+str(newdata)
+summary(newdata)
+colnames(newdata)
+
+newdata$Discipline = combineLevels(newdata$Discipline,
+                                   levs = c("other","MaterialEngg","Biosciences",
+                                            "mechatronics","aeronautical engineering",
+                                            "chemical engineering"),
+                                   newLabel = "other")
+
+
+newdata$School.Board.in.Tenth = combineLevels(newdata$School.Board.in.Tenth,
+                                              levs = c("Himachal Pradesh","Chhattisgarh",
+                                                       "Kerala","Assam","Bihar",
+                                                       "Jammu and Kashmir","other"),
+                                              newLabel = "Other")
+
+newdata$Board.in.Twelth = combineLevels(newdata$Board.in.Twelth,
+                                              levs = c("Himachal Pradesh","Chhattisgarh",
+                                                       "Kerala","Assam","Meghalaya",
+                                                       "Delhi","other"),
+                                              newLabel = "Other")
+visdata = newdata
+
+create_report(visdata)
+ggplot(visdata) + geom_point(aes(x = Age, y = Pay_in_INR/10**6, color = Gender)) + 
+  ggtitle("Scatterplot between Age and Salary \n with distinction on the basis of Gender") + 
+  xlab("Age (Years)") + ylab("Salary(million INR)") +
+  theme(plot.title = element_text(color="#993333", size=14, face="bold.italic"))
+
+visdata$std_GPA = scale(visdata$GPA.Score.in.Graduation)
+visdata$std_GPA = rescale(visdata$std_GPA, to = c(0,10))
+
+ggplot(visdata) + geom_point(aes(x = std_GPA, y = Pay_in_INR/10**6, color = Gender)) + 
+  ggtitle("Scatterplot between GPA(grad) and Salary \n with distinction on the basis of Gender"
+  ) +
+  xlab("GPA (Grad)") + ylab("Salary(million INR)") +
+  theme(plot.title = element_text(color="#993333", size=14, face="bold.italic"))
+
+
+visdata$std_XII = scale(visdata$Score.in.Twelth)
+visdata$std_XII = rescale(visdata$std_XII, to = c(0,10))
+
+ggplot(visdata) + geom_point(aes(x = std_XII, y = Pay_in_INR/10**6, color = Gender)) + 
+  ggtitle("Scatterplot between GPA(12th) and Salary \n with distinction based on Gender")+
+  xlab("GPA (12th)") + ylab("Salary(million INR)") +
+  theme(plot.title = element_text(color="#993333", size=14, face="bold.italic"))
+
+visdata$std_english = scale(visdata$Score.in.English.language)
+visdata$std_english = rescale(visdata$std_english, to = c(0,10))
+
+ggplot(visdata) + geom_point(aes(x = std_english, y = Pay_in_INR/10**6, color = Gender)) + 
+  ggtitle("Plot between communication skills and Salary \n with distinction based on Gender")+
+  xlab("English score") + ylab("Salary(million INR)") +
+  theme(plot.title = element_text(color="#993333", size=14, face="bold.italic"))
+
+
+ggplot(visdata) + geom_point(aes(x = Graduation, y = Pay_in_INR/10**6, color = Gender, shape =  Gap_Scenario)) + 
+  ggtitle("Plot between Graduation and Salary \n with distinction based on Gap_Scenario \n & Gender")+
+  xlab("Graduation degree") + ylab("Salary(million INR)") +
+  theme(plot.title = element_text(color="#993333", size=14, face="bold.italic"))
+
+
+ggplot(visdata) + geom_point(aes(x = Graduation, y = Pay_in_INR/10**6, color = Gap_Scenario)) + 
+  ggtitle("Plot between Graduation and Salary \n with distinction based on Gap_Scenario")+
+  xlab("Graduation degree") + ylab("Salary(million INR)") +
+  theme(plot.title = element_text(color="#993333", size=14, face="bold.italic")
+tier2 = visdata[which(visdata$CollegeTier == '2'),]
+tier1 = visdata[which(visdata$CollegeTier == '1'),]
+#Tier 1 is a better rating, Tier 2 is lower
+
+ggplot(tier1) + geom_point(aes(x = Gender, y = Pay_in_INR/10**6)) + 
+  ggtitle("Plot between Gender and Salary \n for tier 1 college grads") + 
+  xlab("Gender") + ylab("Salary(million INR)") +
+  theme(plot.title = element_text(color="#993333", size=14, face="bold.italic"))
+#However, Tier 2 colleges seem to get a better salary
+
+ggplot(tier2) + geom_point(aes(x = Gender, y = Pay_in_INR/10**6)) + 
+  ggtitle("Plot between Gender and Salary \n for tier 2 college grads") +
+  xlab("Gender") + ylab("Salary(million INR)") +
+  theme(plot.title = element_text(color="#993333", size=14, face="bold.italic"))
+#Tier 1 females seem to earn substantially less than their tier 1 peers
+
+table(visdata$Discipline)
+
+ggplot(visdata) + geom_point(aes(x = Discipline, y = Pay_in_INR/10**6, color = Gender)) + 
+  ggtitle("Plot between Grad Discipline and Salary \n with distinction on the basis of Gender") +
+  xlab("Discipline") + ylab("Salary(million INR)") +
+  theme(plot.title = element_text(color="#993333", size=14, face="bold.italic"))
+
+civil_engineering = mean(visdata$Pay_in_INR[which(visdata$Discipline == "civil engineering")])
+Electronics = mean(visdata$Pay_in_INR[which(visdata$Discipline == "Electronics")])
+Computer.Sci.Engg = mean(visdata$Pay_in_INR[which(visdata$Discipline == "Computer.Sci.Engg")])
+IT = mean(visdata$Pay_in_INR[which(visdata$Discipline == "IT")])
+Instrumentation = mean(visdata$Pay_in_INR[which(visdata$Discipline == "Instrumentation")])
+Mechanical = mean(visdata$Pay_in_INR[which(visdata$Discipline == "Mechanical")])
+Electrical = mean(visdata$Pay_in_INR[which(visdata$Discipline == "Electrical")])
+Inds.Mgmt = mean(visdata$Pay_in_INR[which(visdata$Discipline == "Inds.Mgmt")])
+other = mean(visdata$Pay_in_INR[which(visdata$Discipline == "other")])
+
+dis = c(civil_engineering,Electronics,Computer.Sci.Engg,IT,Instrumentation,Mechanical,
+        Electrical,Inds.Mgmt,other)
+Disciplines = c("Civi","Electronics","Computr.Sci","IT","Instrument",
+                "Mechanical","Electrical","Inds.Mgmt","other")
+
+ggplot() + geom_col(aes(x = Disciplines, y = dis/10**5)) + 
+  ggtitle("Plot describing Average Salary for different fields") +
+  xlab("Discipline") + ylab("Salary(100k INR)") +
+  theme(plot.title = element_text(color="#993333", size=14, face="bold.italic"),
+        axis.text.x = element_text(angle = 45, hjust = 1))
+
+ggplot(visdata) + geom_point(aes(x = School.Board.in.Tenth, y = Pay_in_INR/10**6, color = Gender)) + 
+  ggtitle("Plot between Tenth Board and Salary \n with distinction on the basis of Gender") + 
+  xlab("Discipline") + ylab("Salary(million INR)") +
+  theme(plot.title = element_text(color="#993333", size=14, face="bold.italic"),
+        axis.text.x = element_text(angle = 90, hjust = 1))
+
+rm(dis, Disciplines, civil_engineering, Electronics, Electrical, Computer.Sci.Engg, IT,
+   Instrumentation, Mechanical, other, Inds.Mgmt,visdata, tier1, tier2)
+finale = newdata
+set.seed(914)
+frodo = createDataPartition(finale$Pay_in_INR, p = 0.7, list = F)
+train = finale[frodo,]
+test = finale[-frodo,]
+set.seed(915)
+aragorn = createDataPartition(train$Pay_in_INR, p = 0.9, list = F)
+train = train[aragorn,]
+valid = train[-aragorn,]
+
+numeric_train = Filter(is.numeric, train)
+categ_train = Filter(is.factor, train)
+
+numeric_valid = Filter(is.numeric, valid)
+categ_valid = Filter(is.factor, valid)
+
+numeric_test = Filter(is.numeric, test)
+categ_test = Filter(is.factor, test)
+
+numeric_train = scale(numeric_train[,-1])
+numeric_valid = scale(numeric_valid[,-1])
+numeric_test = scale(numeric_test[,-1])
+
+train = as.data.frame(cbind(numeric_train, categ_train, "Pay_in_INR" = train$Pay_in_INR))
+valid = as.data.frame(cbind(numeric_valid, categ_valid, "Pay_in_INR" = valid$Pay_in_INR))
+test = as.data.frame(cbind(numeric_test, categ_test, "Pay_in_INR" = test$Pay_in_INR))
+
+train = train[,c(1:8,9,31,10,32,11,33,12,34,13,35,14,36,15,37,16:30,38,39)]
+valid = valid[,c(1:8,9,31,10,32,11,33,12,34,13,35,14,36,15,37,16:30,38,39)]
+test = test[,c(1:8,9,31,10,32,11,33,12,34,13,35,14,36,15,37,16:30,38,39)]
+
+#tuneRF(train[,-39], train[,39], ntreeTry = 120)
+model_rf = randomForest(train[,-39], train[,39], ntree = 100)
+rf_raw = predict(model_rf,valid[,-39])
+regr.eval(valid[,39],rf_raw)
+#        mae          mse         rmse         mape 
+#5.988434e+04 1.263334e+10 1.123981e+05 1.245342e-01
+plot(gg_vimp(model_rf))
+oob = gg_error(model_rf)
+plot(oob)
+varImpPlot(model_rf)
+
+model_dt = rpart(Pay_in_INR~.,train, method = "anova")
+dt_raw = predict(model_dt, valid[,-39])
+regr.eval(valid[,39],dt_raw)
+#        mae          mse         rmse         mape 
+#1.662965e+05 7.982575e+10 2.825345e+05 3.483401e-01
+rpart.rules(model_dt, clip.facs = T)
+plot(model_dt)
+prp(model_dt)
+fancyRpartPlot(model_dt)
+summary(model_dt)
+
+model_lm = lm(Pay_in_INR~., data = train)
+lm_raw = predict(model_lm, valid[,-39])
+regr.eval(valid[,39],lm_raw)
+#        mae          mse         rmse         mape 
+#1.810622e+05 8.996289e+10 2.999381e+05 3.549146e-01
+summary(model_lm)
+
+train_dum = dummyVars("~.", data = train)
+dum_train = as.data.frame(predict(train_dum,train))
+
+valid_dum = dummyVars("~.", data = valid)
+dum_valid = as.data.frame(predict(valid_dum, valid))
+
+test_dum = dummyVars("~.", data = test)
+dum_test = as.data.frame(predict(test_dum, test))
+
+PC = prcomp(dum_train[,-120])
+std_dev = PC$sdev
+pr_var = std_dev^2
+summary(PC)
+prop_varex = pr_var/sum(pr_var)
+
+#SCREE PLOT
+plot(prop_varex, xlab = "Principal Component",
+     ylab = "Proportion of Variance Explained",
+     type = "b")
+#cumulative scree plot
+plot(cumsum(prop_varex), xlab = "Principal Component",
+     ylab = "Cumulative Proportion of Variance Explained",
+     type = "b")
+ggplot(mapping = aes(x = 1:119, y = cumsum(prop_varex)*100))+geom_line()+geom_point()+
+  ggtitle("cumulative screeplot for train data") + xlab("Number of Principal Components") +
+  ylab("Percentage variance explained")
+
+train_pca = data.frame("Pay_in_INR" = train$Pay_in_INR, PC$x)
+train_pca = train_pca[,1:51]
+test_pca =  data.frame(predict(PC,dum_test[,-120]))
+valid_pca = data.frame(predict(PC,dum_valid[,-120]))
+model_rf2 = randomForest(train_pca[,-1], train_pca[,1], ntree = 100)
+rf_pca = predict(model_rf2,valid_pca[,1:50])
+regr.eval(valid$Pay_in_INR, rf_pca)
+#        mae          mse         rmse         mape 
+#6.229023e+04 1.291048e+10 1.136243e+05 1.337623e-01
+plot(gg_vimp(model_rf2))
+varImpPlot(model_rf2)
+
+model_dt2 = rpart(Pay_in_INR~., data = train_pca, method = "anova")
+dt_pca = predict(model_dt2, valid_pca[,1:50])
+regr.eval(valid$Pay_in_INR, dt_pca)
+#        mae          mse         rmse         mape 
+#1.701781e+05 8.854554e+10 2.975660e+05 3.550161e-01 
+
+model_lm2 = lm(Pay_in_INR~.,data = train_pca)
+lm_pca = predict(model_lm2, valid_pca[,1:50])
+regr.eval(valid$Pay_in_INR, lm_pca)
+#        mae          mse         rmse         mape 
+#1.830637e+05 9.280413e+10 3.046377e+05 3.584974e-01
+
+ggplot(mapping = aes(rf_raw/10**6, valid$Pay_in_INR/10**6))+geom_point()+geom_abline(intercept = 0, slope = 1)+ 
+  ggtitle("Random forest - actual vs predicted - Pay_in_INR") + xlab("Predicted salary(million INR)") + ylab("Actual salary(million INR)")
+ggplot(mapping = aes(dt_raw/10**6, valid$Pay_in_INR/10**6))+geom_point()+geom_abline(intercept = 0, slope = 1)+ 
+  ggtitle("Decision Tree - actual vs predicted - Pay_in_INR (million INR)") + xlab("Predicted salary") + ylab("Actual salary")
+ggplot(mapping = aes(lm_raw/10**6, valid$Pay_in_INR/10**6))+geom_point()+geom_abline(intercept = 0, slope = 1)+ 
+  ggtitle("Linear regression - actual vs predicted - Pay_in_INR (million INR)") + xlab("Predicted salary") + ylab("Actual salary")
+ggplot(mapping = aes(rf_pca/10**6, valid$Pay_in_INR/10**6))+geom_point()+geom_abline(intercept = 0, slope = 1)+ 
+  ggtitle("Random forest PCA actual vs predicted - Pay_in_INR (million INR)") + xlab("Predicted salary") + ylab("Actual salary")
+ggplot(mapping = aes(dt_pca/10**6, valid$Pay_in_INR/10**6))+geom_point()+geom_abline(intercept = 0, slope = 1)+ 
+  ggtitle("Decision Tree PCA actual vs predicted - Pay_in_INR (million INR)") + xlab("Predicted salary") + ylab("Actual salary")
+ggplot(mapping = aes(lm_pca/10**6, valid$Pay_in_INR/10**6))+geom_point()+geom_abline(intercept = 0, slope = 1)+ 
+  ggtitle("Linear regression PCA actual vs predicted - Pay_in_INR (million INR)") + xlab("Predicted salary") + ylab("Actual salary")
+gain_rf = gains(valid[,39],rf_raw)
+plot(c(0,gain_rf$cume.pct.of.total*sum(valid[,39]))~c(0,gain_rf$cume.obs), 
+     xlab="# cases", ylab="Cumulative Salary (INR)", main="Lift Chart - Random Forest", 
+     col = "blue1", type="l")
+
+lines(c(0,sum(valid[,39]))~c(0,nrow(valid)), col="brown2", lty=2)
+barplot(gain_rf$mean.resp/mean(valid[,39]), names.arg = gain_rf$depth,
+        xlab = "Percentile", ylab = "Mean Response", main = "Decile-wise lift chart for Random Forest",
+        col = "coral1")
+gain_dt = gains(valid[,39], dt_raw, groups = 10)
+plot(c(0,gain_dt$cume.pct.of.total*sum(valid[,39]))~c(0,gain_dt$cume.obs),
+     xlab = "# cases", ylab="Cumulative Salary (INR)", main="Lift Chart - Decision Tree", 
+     col = "black", type="l")
+lines(c(0,sum(valid[,39]))~c(0,nrow(valid)), col="brown2", lty=2)
+barplot(gain_dt$mean.resp/mean(valid[,39]), names.arg = gain_dt$depth,
+        xlab = "Percentile", ylab = "Mean Response", main = "Decile-wise lift chart for Decision Tree",
+        col = "coral1")
+gain_lm = gains(valid[,39], lm_raw, groups = 10)
+plot(c(0,gain_lm$cume.pct.of.total*sum(valid[,39]))~c(0,gain_lm$cume.obs),
+     xlab = "# cases", ylab="Cumulative Salary (INR)", main="Lift Chart", 
+     col = "black", type="l")
+barplot(gain_lm$mean.resp/mean(valid[,39]), names.arg = gain_lm$depth,
+        xlab = "Percentile", ylab = "Mean Response", main = "Decile-wise lift chart for Linear Regression",
+        col = "coral1")
+#Principal Component Contributions
+fviz_pca_var(PC, col.var = "black")
+fviz_contrib(PC, choice = "var", axes = 29,top = 10)
+fviz_contrib(PC, choice = "var", axes = 1,top = 10)
+#Test predictions
+test_rf = predict(model_rf, test[,-39])
+regr.eval(test[,39],test_rf)
